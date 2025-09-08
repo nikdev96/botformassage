@@ -24,7 +24,15 @@ Thumbs.db
 *.log
 logs/
 
-# Env
+# Environment files (NEVER commit these!)
 .env
 .env.local
 .env.production
+.env.development
+.env.test
+
+# Bot secrets and credentials
+*.token
+*_token*
+*_secret*
+bot_credentials.txt
