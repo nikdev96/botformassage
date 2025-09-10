@@ -10,18 +10,27 @@ from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 
-from config import ADMIN_CHAT_ID, TZ, TZINFO, MAX_DAYS_AHEAD, RESERVATIONS, user_languages, TEXTS
+from config import ADMIN_CHAT_ID, TZ, TZINFO, MAX_DAYS_AHEAD, RESERVATIONS, user_languages, TEXTS, FEATURE_AI_BOOKING, OPENAI_API_KEY
 from models import BookingState
+from aiogram.fsm.state import State, StatesGroup
 from utils import (
     get_text, get_lang, validate_date_format, validate_time_format, 
     is_valid_phone, safe_text, get_service_by_key, get_service_variant,
-    get_category_by_local_name
+    get_category_by_local_name, reserve_and_notify
 )
 from keyboards import (
     create_language_keyboard, create_main_menu, categories_kb,
     create_services_keyboard, create_duration_keyboard, create_confirm_keyboard
 )
 from calendar_utils import build_calendar, slots_kb
+from chatgpt import ask_chatgpt
+
+# Состояния для AI чата
+class ChatState(StatesGroup):
+    asking = State()
+
+class AIState(StatesGroup):
+    asking = State()
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
@@ -41,7 +50,7 @@ async def cmd_start(message: Message, state: FSMContext):
         # Пользователь уже выбрал язык ранее
         await message.answer(
             get_text(user_id, "choose_category"),
-            reply_markup=categories_kb(user_id)
+            reply_markup=create_main_menu(user_id)
         )
     else:
         await message.answer(
@@ -60,6 +69,38 @@ async def cmd_lang(message: Message, state: FSMContext):
         reply_markup=create_language_keyboard()
     )
 
+@router.message(Command("ai"))
+async def cmd_ai(message: Message, state: FSMContext):
+    """Команда запуска AI ассистента"""
+    await state.clear()
+    user_id = message.from_user.id
+    
+    from config import FEATURE_CHATGPT, OPENAI_API_KEY
+    
+    # Проверяем, доступен ли AI
+    if not FEATURE_CHATGPT or not OPENAI_API_KEY:
+        await message.answer(get_text(user_id, "ai_unavailable"))
+        return
+    
+    # Переводим в режим ожидания вопроса
+    await state.set_state(ChatState.asking)
+    await message.answer(get_text(user_id, "enter_ai_question"))
+
+@router.message(Command("ai_book"))
+async def cmd_ai_book(message: Message, state: FSMContext):
+    """Команда запуска AI booking ассистента"""
+    await state.clear()
+    user_id = message.from_user.id
+    
+    # Проверяем, доступен ли AI booking
+    if not FEATURE_AI_BOOKING or not OPENAI_API_KEY:
+        await message.answer(get_text(user_id, "ai_unavailable"))
+        return
+    
+    # Переводим в режим AI бронирования
+    await state.set_state(AIState.asking)
+    await message.answer(get_text(user_id, "ai_start"))
+
 # === ВЫБОР ЯЗЫКА ===
 
 @router.callback_query(F.data.startswith("lang:"))
@@ -70,8 +111,12 @@ async def select_language(callback: CallbackQuery, state: FSMContext):
     user_languages[user_id] = lang
     
     await callback.message.edit_text(
-        get_text(user_id, "language_changed"),
-        reply_markup=categories_kb(user_id)
+        get_text(user_id, "language_changed")
+    )
+    # Отправляем новое сообщение с reply-клавиатурой
+    await callback.message.answer(
+        get_text(user_id, "choose_category"),
+        reply_markup=create_main_menu(user_id)
     )
     await callback.answer()
 
@@ -96,6 +141,16 @@ async def handle_text_menu(message: Message, state: FSMContext):
         await cmd_lang(message, state)
         return
     
+    # Проверяем, является ли это командой AI
+    if text == get_text(user_id, "ask_ai"):
+        await cmd_ai(message, state)
+        return
+    
+    # Проверяем, является ли это командой AI booking
+    if text == get_text(user_id, "ai_booking"):
+        await cmd_ai_book(message, state)
+        return
+    
     # Пытаемся найти категорию по названию кнопки
     # Убираем emoji из текста кнопки
     clean_text = text
@@ -118,6 +173,10 @@ async def handle_text_menu(message: Message, state: FSMContext):
             await process_name(message, state)
         elif current_state == BookingState.entering_phone.state:
             await process_phone(message, state)
+        elif current_state == ChatState.asking.state:
+            await process_ai_question(message, state)
+        elif current_state == AIState.asking.state:
+            await process_ai_booking(message, state)
         else:
             # Неизвестная команда, показываем меню
             await message.answer(f"Раздел временно недоступен.")
@@ -131,9 +190,11 @@ async def select_category_text(message: Message, state: FSMContext, category: st
         await message.answer(f"Раздел временно недоступен.")
         return
     
-    category_name = get_text(user_id, f"categories.{category}")
+    # Маппинг для корректной локализации категорий
+    category_key = "wax" if category == "waxing" else category
+    category_name = get_text(user_id, f"categories.{category_key}")
     await message.answer(
-        f"📋 *{category_name}*\n\nВыберите услугу:",
+        f"📋 *{category_name}*\n\n{get_text(user_id, 'select_service')}:",
         reply_markup=create_services_keyboard(user_id, category)
     )
     await state.set_state(BookingState.selecting_service)
@@ -147,9 +208,11 @@ async def select_category_inline(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     await state.clear()
     
-    category_name = get_text(user_id, f"categories.{category}")
+    # Маппинг для корректной локализации категорий
+    category_key = "wax" if category == "waxing" else category
+    category_name = get_text(user_id, f"categories.{category_key}")
     await callback.message.edit_text(
-        f"📋 *{category_name}*\n\nВыберите услугу:",
+        f"📋 *{category_name}*\n\n{get_text(user_id, 'select_service')}:",
         reply_markup=create_services_keyboard(user_id, category)
     )
     await state.set_state(BookingState.selecting_service)
@@ -388,6 +451,36 @@ async def process_phone(message: Message, state: FSMContext):
         reply_markup=create_confirm_keyboard(user_id)
     )
 
+# === AI АССИСТЕНТ ===
+
+@router.message(ChatState.asking)
+async def process_ai_question(message: Message, state: FSMContext):
+    """Обрабатывает вопрос к AI ассистенту"""
+    question = message.text.strip()
+    user_id = message.from_user.id
+    
+    if not question:
+        await message.answer(get_text(user_id, "enter_ai_question"))
+        return
+    
+    # Отправляем временное сообщение "Думаю..."
+    thinking_msg = await message.answer(get_text(user_id, "ai_thinking"))
+    
+    # Получаем ответ от ChatGPT
+    response = await ask_chatgpt(question, user_id)
+    
+    # Редактируем сообщение с ответом
+    await thinking_msg.edit_text(response)
+    
+    # Отправляем reply-клавиатуру для продолжения работы
+    await message.answer(
+        get_text(user_id, "choose_category"),
+        reply_markup=create_main_menu(user_id)
+    )
+    
+    # Очищаем состояние
+    await state.clear()
+
 # === ПОДТВЕРЖДЕНИЕ ЗАПИСИ ===
 
 @router.callback_query(BookingState.confirming, F.data.startswith("confirm:"))
@@ -399,6 +492,11 @@ async def process_confirmation(callback: CallbackQuery, state: FSMContext, bot: 
     if action == "no":
         await callback.message.edit_text(
             get_text(user_id, "booking_cancelled")
+        )
+        # Отправляем reply-клавиатуру для продолжения работы
+        await callback.message.answer(
+            get_text(user_id, "choose_category"),
+            reply_markup=create_main_menu(user_id)
         )
         await state.clear()
         await callback.answer()
@@ -443,6 +541,12 @@ async def process_confirmation(callback: CallbackQuery, state: FSMContext, bot: 
     
     await callback.message.edit_text(
         confirmation_message
+    )
+    
+    # Отправляем reply-клавиатуру для продолжения работы
+    await callback.message.answer(
+        get_text(user_id, "choose_category"),
+        reply_markup=create_main_menu(user_id)
     )
     
     # Фиксируем слот в резервациях
@@ -490,9 +594,11 @@ async def back_to_services(callback: CallbackQuery, state: FSMContext):
     category = callback.data.split(":")[1]
     user_id = callback.from_user.id
     
-    category_name = get_text(user_id, f"categories.{category}")
+    # Маппинг для корректной локализации категорий
+    category_key = "wax" if category == "waxing" else category
+    category_name = get_text(user_id, f"categories.{category_key}")
     await callback.message.edit_text(
-        f"📋 *{category_name}*\n\nВыберите услугу:",
+        f"📋 *{category_name}*\n\n{get_text(user_id, 'select_service')}:",
         reply_markup=create_services_keyboard(user_id, category)
     )
     await state.set_state(BookingState.selecting_service)
@@ -535,6 +641,108 @@ async def handle_change_lang(callback: CallbackQuery, state: FSMContext):
         get_text(user_id, "choose_language"),
         reply_markup=create_language_keyboard()
     )
+    await callback.answer("✅")
+
+# === AI BOOKING ХЕНДЛЕРЫ ===
+
+async def process_ai_booking(message: Message, state: FSMContext):
+    """Обрабатывает диалог AI booking"""
+    from ai_booking import ai_book
+    
+    user_id = message.from_user.id
+    text = message.text.strip()
+    
+    if not text:
+        await message.answer(get_text(user_id, "ai_start"))
+        return
+    
+    # Получаем контекст из состояния
+    data = await state.get_data()
+    context = data.get("ai_context", {})
+    
+    # Отправляем "думаю..." сообщение
+    thinking_msg = await message.answer(get_text(user_id, "ai_thinking"))
+    
+    try:
+        # Обрабатываем через AI
+        response, booking_data = await ai_book(user_id, text, context)
+        
+        # Редактируем сообщение с ответом
+        await thinking_msg.edit_text(response)
+        
+        if booking_data:
+            # Готово к подтверждению - показываем кнопки
+            from keyboards import create_confirm_keyboard
+            await message.answer(
+                get_text(user_id, "ai_ready_to_confirm").format(
+                    service=booking_data.get("service_key", ""),
+                    duration=booking_data.get("duration", ""),
+                    date=booking_data.get("date_str", ""),
+                    time=booking_data.get("time_str", "")
+                ),
+                reply_markup=create_confirm_keyboard(user_id)
+            )
+            # Сохраняем данные бронирования в состояние
+            await state.update_data(ai_booking_data=booking_data)
+        else:
+            # Нужны уточнения - обновляем контекст
+            context.update({
+                "last_user_input": text,
+                "last_ai_response": response
+            })
+            await state.update_data(ai_context=context)
+            
+    except Exception as e:
+        logger.error(f"Error in AI booking: {e}")
+        await thinking_msg.edit_text(get_text(user_id, "ai_unavailable"))
+
+@router.callback_query(AIState.asking, F.data.startswith("confirm:"))
+async def ai_confirm_booking(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    """Обрабатывает подтверждение AI booking"""
+    action = callback.data.split(":")[1]
+    user_id = callback.from_user.id
+    
+    if action == "no":
+        await callback.message.edit_text(
+            get_text(user_id, "booking_cancelled")
+        )
+        # Отправляем reply-клавиатуру для продолжения работы  
+        await callback.message.answer(
+            get_text(user_id, "choose_category"),
+            reply_markup=create_main_menu(user_id)
+        )
+        await state.clear()
+        await callback.answer()
+        return
+    
+    # Подтверждение записи через AI
+    data = await state.get_data()
+    booking_data = data.get("ai_booking_data")
+    
+    if not booking_data:
+        await callback.message.edit_text(get_text(user_id, "ai_unavailable"))
+        await state.clear()
+        await callback.answer()
+        return
+    
+    try:
+        # Используем общую функцию резервации
+        confirmation_message = await reserve_and_notify(bot, user_id, booking_data, "ai")
+        
+        # Показываем подтверждение
+        await callback.message.edit_text(confirmation_message)
+        
+        # Отправляем reply-клавиатуру для продолжения работы
+        await callback.message.answer(
+            get_text(user_id, "choose_category"),
+            reply_markup=create_main_menu(user_id)
+        )
+        
+    except Exception as e:
+        logger.error(f"Error confirming AI booking: {e}")
+        await callback.message.edit_text(get_text(user_id, "ai_unavailable"))
+    
+    await state.clear()
     await callback.answer("✅")
 
 # === ИГНОРИРУЕМЫЕ CALLBACK-И ===

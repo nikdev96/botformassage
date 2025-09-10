@@ -211,3 +211,90 @@ def run_offline_tests() -> None:
             assert time_diff < SLOT_STEP_MIN, f"Первый слот {today_slots[0]} слишком рано. Разница: {time_diff} минут"
     
     print("✅ ALL TESTS PASSED (включая календарные функции и ограничение 14 дней)")
+
+# === УТИЛИТЫ ДЛЯ ПОВТОРНОГО ИСПОЛЬЗОВАНИЯ ===
+
+async def reserve_and_notify(bot, user_id: int, data: dict, booking_source: str = "manual") -> None:
+    """
+    Общая функция для резервации слота и отправки уведомлений
+    
+    Args:
+        bot: Экземпляр бота для отправки сообщений
+        user_id: ID пользователя 
+        data: Данные бронирования (service_key, duration, date_str, time_str, client_name, client_phone, date_iso)
+        booking_source: Источник бронирования ('manual', 'ai')
+    """
+    from config import ADMIN_CHAT_ID, TZ, TZINFO, RESERVATIONS
+    
+    # Получаем данные об услуге
+    service = get_service_by_key(data["service_key"])
+    variant = get_service_variant(data["service_key"], data["duration"])
+    
+    if not service or not variant:
+        logger.error(f"Service or variant not found: {data['service_key']}, {data['duration']}")
+        return
+    
+    lang = get_lang(user_id)
+    service_title = service.get_title(lang)
+    
+    # Сообщение админу
+    admin_message = get_text(
+        user_id, "admin_new_booking",
+        service=service_title,
+        duration=data["duration"],
+        date=data["date_str"],
+        time=data["time_str"],
+        name=safe_text(data["client_name"]),
+        phone=safe_text(data["client_phone"]),
+        user_id=user_id,
+        username=safe_text(f"@{getattr(bot, 'username', 'unknown')}"),
+        tz=TZ
+    )
+    
+    # Отправляем уведомление админу
+    try:
+        await bot.send_message(ADMIN_CHAT_ID, admin_message)
+    except Exception as e:
+        logger.error(f"Failed to send admin notification: {e}")
+    
+    # Сообщение пользователю
+    success_key = "ai_booking_success" if booking_source == "ai" else "booking_confirmed"
+    
+    if booking_source == "ai":
+        confirmation_message = get_text(user_id, success_key)
+    else:
+        confirmation_message = get_text(
+            user_id, success_key,
+            service=service_title,
+            date=data["date_str"],
+            time=data["time_str"],
+            duration=data["duration"],
+            price=variant.price_thb,
+            tz=TZ
+        )
+    
+    # Фиксируем слот в резервациях
+    date_iso = data.get("date_iso")
+    if date_iso and data.get("time_str"):
+        try:
+            # Парсим дату и время
+            if date_iso:
+                booking_date = datetime.fromisoformat(date_iso).date()
+            else:
+                # Парсим из date_str если date_iso отсутствует  
+                booking_date = datetime.strptime(data["date_str"], "%d.%m.%Y").date()
+            
+            booking_time = datetime.strptime(data["time_str"], "%H:%M").time()
+            start_dt = datetime.combine(booking_date, booking_time)
+            end_dt = start_dt + timedelta(minutes=data["duration"])
+            
+            # Добавляем резервацию
+            date_key = booking_date.strftime("%Y-%m-%d")
+            RESERVATIONS[date_key].append((start_dt, end_dt))
+            
+            logger.info(f"Slot reserved: {start_dt} - {end_dt} for user {user_id}")
+            
+        except Exception as e:
+            logger.error(f"Ошибка при фиксации резервации: {e}")
+    
+    return confirmation_message

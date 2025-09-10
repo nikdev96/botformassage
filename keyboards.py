@@ -10,7 +10,7 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from typing import List
 
-from config import user_languages
+from config import user_languages, FEATURE_AI_BOOKING
 from models import SERVICE_CATEGORIES, SERVICE_CATALOG
 from utils import get_text, get_service_by_key
 
@@ -57,9 +57,29 @@ def create_main_menu(user_id: int) -> ReplyKeyboardMarkup:
     
     buttons = [row1, row2]
     
-    # Добавляем кнопку смены языка
+    # Добавляем кнопки AI, AI booking и смены языка
+    bottom_buttons = []
+    
+    # AI чат всегда доступен
+    ai_button = KeyboardButton(text=get_text(user_id, "ask_ai"))
+    bottom_buttons.append(ai_button)
+    
+    # AI booking только если включен
+    if FEATURE_AI_BOOKING:
+        ai_booking_button = KeyboardButton(text=get_text(user_id, "ai_booking"))
+        bottom_buttons.append(ai_booking_button)
+    
+    # Смена языка
     lang_button = KeyboardButton(text=get_text(user_id, "change_language"))
-    buttons.append([lang_button])
+    bottom_buttons.append(lang_button)
+    
+    # Разбиваем кнопки по рядам (максимум 3 в ряду)
+    if len(bottom_buttons) <= 2:
+        buttons.append(bottom_buttons)
+    else:
+        # Первый ряд: AI кнопки, второй ряд: язык
+        buttons.append(bottom_buttons[:-1])
+        buttons.append([bottom_buttons[-1]])
     
     return ReplyKeyboardMarkup(
         keyboard=buttons,

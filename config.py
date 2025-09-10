@@ -14,6 +14,11 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", "0"))
 TZ = os.getenv("TZ", "Asia/Bangkok")
 
+# OpenAI настройки
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+FEATURE_CHATGPT = os.getenv("FEATURE_CHATGPT", "0") == "1"
+FEATURE_AI_BOOKING = os.getenv("FEATURE_AI_BOOKING", "0") == "1"
+
 # Конфигурация календаря и рабочего времени
 TZINFO = zoneinfo.ZoneInfo(TZ)
 WORKING_HOURS = {
@@ -42,6 +47,7 @@ TEXTS = {
         "choose_language": "Выберите язык:",
         "language_changed": "✅ Язык изменен на русский",
         "choose_category": "Выберите категорию услуг:",
+        "select_service": "Выберите услугу:",
         "back": "← Назад",
         "book_service": "📅 Записаться",
         "cat_massage": "Массаж",
@@ -72,6 +78,16 @@ TEXTS = {
         "prev_month": "◀️",
         "next_month": "▶️",
         "no_slots": "❌ На эту дату нет свободных слотов",
+        "ask_ai": "🤖 Задать вопрос ИИ",
+        "enter_ai_question": "Напишите вопрос для ассистента:",
+        "ai_unavailable": "ИИ временно недоступен",
+        "ai_thinking": "Думаю…",
+        "ai_booking": "🤖 ИИ-помощник записи",
+        "ai_start": "Опишите, что вы хотите забронировать (услуга/дата/время/длительность).",
+        "ai_clarify_missing": "Нужно уточнить: {fields}",
+        "ai_time_unavailable": "Выбранное время недоступно. Доступно: {slots}",
+        "ai_ready_to_confirm": "Проверьте: {service}, {duration} мин, {date} {time}. Подтвердить?",
+        "ai_booking_success": "✅ Запись оформлена через ИИ-помощника!",
         "categories": {
             "massage": "Массаж",
             "spa": "Spa",
@@ -84,6 +100,7 @@ TEXTS = {
         "choose_language": "Choose language:",
         "language_changed": "✅ Language changed to English",
         "choose_category": "Choose service category:",
+        "select_service": "Choose a service:",
         "back": "← Back",
         "book_service": "📅 Book",
         "cat_massage": "Massage",
@@ -114,6 +131,16 @@ TEXTS = {
         "prev_month": "◀️",
         "next_month": "▶️",
         "no_slots": "❌ No available slots for this date",
+        "ask_ai": "🤖 Ask AI assistant",
+        "enter_ai_question": "Type your question for the assistant:",
+        "ai_unavailable": "AI is currently unavailable",
+        "ai_thinking": "Thinking…",
+        "ai_booking": "🤖 AI Booking Assistant",
+        "ai_start": "Describe what you want to book (service/date/time/duration).",
+        "ai_clarify_missing": "Need to clarify: {fields}",
+        "ai_time_unavailable": "Chosen time is unavailable. Available: {slots}",
+        "ai_ready_to_confirm": "Please confirm: {service}, {duration} min, {date} {time}. Confirm?",
+        "ai_booking_success": "✅ Booking completed via AI Assistant!",
         "categories": {
             "massage": "Massage",
             "spa": "Spa", 
