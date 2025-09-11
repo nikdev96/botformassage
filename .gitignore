@@ -36,3 +36,8 @@ logs/
 *_token*
 *_secret*
 bot_credentials.txt
+
+# Google API credentials (NEVER commit!)
+*credentials*.json
+*service-account*.json
+google_*.json

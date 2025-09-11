@@ -11,16 +11,18 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 
 from config import ADMIN_CHAT_ID, TZ, TZINFO, MAX_DAYS_AHEAD, RESERVATIONS, user_languages, TEXTS, FEATURE_AI_BOOKING, OPENAI_API_KEY
-from models import BookingState
+from models import BookingState, SERVICE_CATEGORIES
 from aiogram.fsm.state import State, StatesGroup
 from utils import (
     get_text, get_lang, validate_date_format, validate_time_format, 
     is_valid_phone, safe_text, get_service_by_key, get_service_variant,
-    get_category_by_local_name, reserve_and_notify
+    get_category_by_local_name, reserve_and_notify, show_calendar_for_booking,
+    show_time_slots, handle_fsm_back_navigation
 )
 from keyboards import (
     create_language_keyboard, create_main_menu, categories_kb,
-    create_services_keyboard, create_duration_keyboard, create_confirm_keyboard
+    create_services_keyboard, create_duration_keyboard, create_confirm_keyboard,
+    create_back_keyboard
 )
 from calendar_utils import build_calendar, slots_kb
 from chatgpt import ask_chatgpt
@@ -41,8 +43,14 @@ router = Router()
 # === КОМАНДЫ И СТАРТОВЫЕ ХЭНДЛЕРЫ ===
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext):
-    """Команда /start - приветствие и выбор языка"""
+async def cmd_start(message: Message, state: FSMContext) -> None:
+    """
+    Команда /start - приветствие и выбор языка
+    
+    Args:
+        message: Входящее сообщение от пользователя
+        state: FSM контекст для управления состояниями
+    """
     await state.clear()
     user_id = message.from_user.id
     
@@ -59,8 +67,14 @@ async def cmd_start(message: Message, state: FSMContext):
         )
 
 @router.message(Command("lang"))
-async def cmd_lang(message: Message, state: FSMContext):
-    """Команда смены языка"""
+async def cmd_lang(message: Message, state: FSMContext) -> None:
+    """
+    Команда смены языка
+    
+    Args:
+        message: Входящее сообщение от пользователя
+        state: FSM контекст для управления состояниями
+    """
     await state.clear()
     user_id = message.from_user.id
     
@@ -141,9 +155,18 @@ async def handle_text_menu(message: Message, state: FSMContext):
         await cmd_lang(message, state)
         return
     
-    # Проверяем, является ли это командой AI
-    if text == get_text(user_id, "ask_ai"):
-        await cmd_ai(message, state)
+    # Проверяем, является ли это кнопкой главного меню
+    if text == get_text(user_id, "main_menu"):
+        await state.clear()
+        await message.answer(
+            get_text(user_id, "choose_category"),
+            reply_markup=create_main_menu(user_id)
+        )
+        return
+    
+    # Проверяем, является ли это кнопкой "Назад"
+    if text == get_text(user_id, "back"):
+        await handle_back_button(message, state)
         return
     
     # Проверяем, является ли это командой AI booking
@@ -179,7 +202,14 @@ async def handle_text_menu(message: Message, state: FSMContext):
             await process_ai_booking(message, state)
         else:
             # Неизвестная команда, показываем меню
-            await message.answer(f"Раздел временно недоступен.")
+            await message.answer(get_text(user_id, "section_unavailable"))
+
+async def handle_back_button(message: Message, state: FSMContext):
+    """Обрабатывает нажатие кнопки 'Назад'"""
+    user_id = message.from_user.id
+    current_state = await state.get_state()
+    
+    await handle_fsm_back_navigation(user_id, message, state, current_state)
 
 async def select_category_text(message: Message, state: FSMContext, category: str):
     """Показывает услуги выбранной категории"""
@@ -187,7 +217,7 @@ async def select_category_text(message: Message, state: FSMContext, category: st
     await state.clear()
     
     if category not in ["massage", "spa", "waxing", "nails"]:
-        await message.answer(f"Раздел временно недоступен.")
+        await message.answer(get_text(user_id, "section_unavailable"))
         return
     
     # Маппинг для корректной локализации категорий
@@ -224,6 +254,8 @@ async def select_service(callback_query: CallbackQuery, state: FSMContext):
     service_key = callback_query.data.split(":")[1]
     user_id = callback_query.from_user.id
     
+    logger.info(f"🔧 Выбрана услуга: {service_key} пользователем {user_id}")
+    
     service = get_service_by_key(service_key)
     if not service:
         await callback_query.answer("❌ Услуга не найдена")
@@ -234,20 +266,33 @@ async def select_service(callback_query: CallbackQuery, state: FSMContext):
     lang = get_lang(user_id)
     title = service.get_title(lang)
     
-    if len(service.variants) == 1:
-        # Если только один вариант, сразу переходим к выбору даты
+    # Определяем категорию услуги
+    service_category = None
+    for category, services in SERVICE_CATEGORIES.items():
+        if service_key in services:
+            service_category = category
+            break
+    
+    # Обработка фиксированных длительностей для категорий
+    if service_category == "nails":
+        # Nails: фиксированная длительность 90 минут, сразу к календарю
+        await state.update_data(duration=90)
+        await show_calendar_for_booking(user_id, callback_query, state)
+    elif service_category == "waxing":
+        # Waxing: первый вариант или 60 минут по умолчанию
+        duration = 60  # fallback
+        if service.variants:
+            duration = service.variants[0].duration_min
+        
+        await state.update_data(duration=duration)
+        await show_calendar_for_booking(user_id, callback_query, state)
+    elif len(service.variants) == 1:
+        # Massage/Spa с одним вариантом - сразу к календарю
         variant = service.variants[0]
         await state.update_data(duration=variant.duration_min)
-        await state.set_state(BookingState.selecting_date)
-        
-        today = datetime.now(TZINFO).date()
-        max_date = today + timedelta(days=MAX_DAYS_AHEAD)
-        
-        await callback_query.message.edit_text(
-            get_text(user_id, "pick_date"),
-            reply_markup=build_calendar(user_id, today.year, today.month, today, max_date)
-        )
+        await show_calendar_for_booking(user_id, callback_query, state)
     else:
+        # Massage/Spa с несколькими вариантами - показываем выбор длительности
         await callback_query.message.edit_text(
             f"*{title}*\n\n{get_text(user_id, 'select_duration')}",
             reply_markup=create_duration_keyboard(user_id, service_key)
@@ -265,15 +310,7 @@ async def select_duration(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     
     await state.update_data(service_key=service_key, duration=duration)
-    await state.set_state(BookingState.selecting_date)
-    
-    today = datetime.now(TZINFO).date()
-    max_date = today + timedelta(days=MAX_DAYS_AHEAD)
-    
-    await callback.message.edit_text(
-        get_text(user_id, "pick_date"),
-        reply_markup=build_calendar(user_id, today.year, today.month, today, max_date)
-    )
+    await show_calendar_for_booking(user_id, callback, state)
     await callback.answer()
 
 # === КАЛЕНДАРЬ ===
@@ -310,16 +347,23 @@ async def select_calendar_date(callback: CallbackQuery, state: FSMContext):
     date_iso = selected_date.strftime("%Y-%m-%d")
     await state.update_data(date_str=date_str, date_iso=date_iso)
     
-    # Получаем длительность из состояния
+    # Получаем длительность и service_key из состояния
     data = await state.get_data()
     duration = data.get("duration", 60)
+    service_key = data.get("service_key", "")
+    
+    # Определяем категорию для выбора шага слотов
+    service_category = None
+    for category, services in SERVICE_CATEGORIES.items():
+        if service_key in services:
+            service_category = category
+            break
+    
+    # Используем стандартный шаг слотов для всех категорий
+    step_min = None
     
     # Показываем доступные временные слоты
-    await callback.message.edit_text(
-        get_text(user_id, "pick_time"),
-        reply_markup=slots_kb(user_id, selected_date, duration)
-    )
-    await state.set_state(BookingState.selecting_time)
+    await show_time_slots(user_id, callback, state, selected_date, duration, step_min)
     await callback.answer()
 
 @router.callback_query(F.data.startswith("slot_time:"))
@@ -335,6 +379,12 @@ async def select_time_slot(callback: CallbackQuery, state: FSMContext):
     
     await callback.message.edit_text(
         get_text(user_id, "step_name")
+    )
+    
+    # Отправляем отдельное сообщение с reply клавиатурой 
+    await callback.message.answer(
+        get_text(user_id, "enter_name_prompt"),
+        reply_markup=create_back_keyboard(user_id)
     )
     await callback.answer()
 
@@ -379,7 +429,8 @@ async def process_date(message: Message, state: FSMContext):
     await state.set_state(BookingState.entering_time)
     
     await message.answer(
-        get_text(user_id, "step_time")
+        get_text(user_id, "step_time"),
+        reply_markup=create_back_keyboard(user_id)
     )
 
 @router.message(BookingState.entering_time)
@@ -415,7 +466,8 @@ async def process_name(message: Message, state: FSMContext):
     await state.set_state(BookingState.entering_phone)
     
     await message.answer(
-        get_text(user_id, "step_phone")
+        get_text(user_id, "step_phone"),
+        reply_markup=create_back_keyboard(user_id)
     )
 
 @router.message(BookingState.entering_phone)
@@ -502,75 +554,27 @@ async def process_confirmation(callback: CallbackQuery, state: FSMContext, bot: 
         await callback.answer()
         return
     
-    # Подтверждение записи
+    # Подтверждение записи (единая функция: уведомления, резервация, интеграции)
     data = await state.get_data()
-    service = get_service_by_key(data["service_key"])
-    variant = get_service_variant(data["service_key"], data["duration"])
-    lang = user_languages.get(user_id, "en")
-    service_title = service.get_title(lang)
-    
-    # Отправляем уведомление администратору
-    if ADMIN_CHAT_ID:
-        admin_message = get_text(
-            user_id, "admin_new_booking",
-            service=service_title,
-            duration=data["duration"],
-            date=data["date_str"],
-            time=data["time_str"],
-            name=safe_text(data["client_name"]),
-            phone=safe_text(data["client_phone"]),
-            user_id=user_id,
-            username=safe_text(callback.from_user.username or "не указан"),
-            tz=TZ
+    try:
+        confirmation_message = await reserve_and_notify(
+            bot,
+            user_id,
+            data,
+            booking_source="manual",
         )
-        try:
-            await bot.send_message(ADMIN_CHAT_ID, admin_message)
-        except Exception as e:
-            logger.error(f"Ошибка отправки уведомления админу: {e}")
-    
-    # Подтверждение клиенту
-    confirmation_message = get_text(
-        user_id, "booking_confirmed",
-        service=service_title,
-        date=data["date_str"],
-        time=data["time_str"],
-        duration=data["duration"],
-        price=variant.price_thb,
-        tz=TZ
-    )
-    
-    await callback.message.edit_text(
-        confirmation_message
-    )
-    
+    except TypeError:
+        # Совместимость со старой сигнатурой (если резервация без доп. параметров)
+        confirmation_message = await reserve_and_notify(bot, user_id, data, "manual")
+
+    await callback.message.edit_text(confirmation_message)
+
     # Отправляем reply-клавиатуру для продолжения работы
     await callback.message.answer(
         get_text(user_id, "choose_category"),
         reply_markup=create_main_menu(user_id)
     )
-    
-    # Фиксируем слот в резервациях
-    date_iso = data.get("date_iso")
-    if date_iso and data.get("time_str"):
-        try:
-            # Парсим дату и время
-            if date_iso:
-                booking_date = datetime.fromisoformat(date_iso).date()
-            else:
-                # Парсим из date_str если date_iso отсутствует
-                booking_date = datetime.strptime(data["date_str"], "%d.%m.%Y").date()
-            
-            booking_time = datetime.strptime(data["time_str"], "%H:%M").time()
-            start_dt = datetime.combine(booking_date, booking_time)
-            end_dt = start_dt + timedelta(minutes=data["duration"])
-            
-            # Добавляем резервацию
-            date_key = booking_date.strftime("%Y-%m-%d")
-            RESERVATIONS[date_key].append((start_dt, end_dt))
-            
-        except Exception as e:
-            logger.error(f"Ошибка при фиксации резервации: {e}")
-    
+
     await state.clear()
     await callback.answer("✅")
 
@@ -609,14 +613,7 @@ async def back_to_calendar(callback: CallbackQuery, state: FSMContext):
     """Возвращает к календарю"""
     user_id = callback.from_user.id
     
-    today = datetime.now(TZINFO).date()
-    max_date = today + timedelta(days=MAX_DAYS_AHEAD)
-    
-    await callback.message.edit_text(
-        get_text(user_id, "pick_date"),
-        reply_markup=build_calendar(user_id, today.year, today.month, today, max_date)
-    )
-    await state.set_state(BookingState.selecting_date)
+    await show_calendar_for_booking(user_id, callback, state)
     await callback.answer()
 
 @router.callback_query(F.data == "main_menu")

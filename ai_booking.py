@@ -170,13 +170,36 @@ def normalize_and_validate(data: Dict[str, Any], user_id: int) -> Tuple[Dict[str
         if service:
             normalized["service_key"] = data["service_key"]
             
-            # Валидация длительности
-            if "duration_min" in data:
+            # Определяем категорию услуги для фиксированных длительностей
+            service_category = None
+            for category, services in SERVICE_CATEGORIES.items():
+                if data["service_key"] in services:
+                    service_category = category
+                    break
+            
+            # Валидация длительности с учетом фиксированных категорий
+            if service_category == "nails":
+                # Nails: фиксированная длительность 90 минут
+                normalized["duration"] = 90
+            elif service_category == "waxing":
+                # Waxing: первый доступный вариант или 60 минут
+                if service.variants:
+                    normalized["duration"] = service.variants[0].duration_min
+                else:
+                    normalized["duration"] = 60
+            elif "duration_min" in data:
+                # Massage/Spa: валидируем предложенную длительность
                 variant = get_service_variant(data["service_key"], data["duration_min"])
                 if variant:
                     normalized["duration"] = data["duration_min"]
                 else:
                     errors.append("Invalid duration for this service")
+            else:
+                # Если длительность не указана для massage/spa, берем первый доступный
+                if service.variants:
+                    normalized["duration"] = service.variants[0].duration_min
+                else:
+                    errors.append("No duration available for this service")
         else:
             errors.append("Invalid service")
     
@@ -264,8 +287,29 @@ async def ai_book(user_id: int, text: str, context: Dict = None) -> Tuple[str, O
     
     if errors:
         # Если есть ошибки - возвращаем их для уточнения
-        error_msg = "\\n".join(errors)
-        return f"{get_text(user_id, 'ai_clarify_missing').format(fields=error_msg)}\\n\\n{ai_result.get('message', '')}", None
+        lang = user_languages.get(user_id, "en")
+        
+        # Специальная обработка для "Invalid service" - добавляем уточнение про массаж
+        if "Invalid service" in errors and lang == "ru":
+            # Для RU пользователей заменяем "Invalid service" на дружелюбное уточнение
+            filtered_errors = [e for e in errors if e != "Invalid service"]
+            
+            if filtered_errors:
+                error_msg = ", ".join(filtered_errors)
+                clarify_msg = get_text(user_id, 'ai_clarify_missing').format(fields=error_msg)
+            else:
+                clarify_msg = ""
+            
+            massage_clarify = get_text(user_id, 'ai_clarify_massage_type')
+            
+            if clarify_msg:
+                return f"{clarify_msg}\\n\\n{massage_clarify}", None
+            else:
+                return massage_clarify, None
+        else:
+            # Стандартная обработка для EN или других ошибок
+            error_msg = "\\n".join(errors)
+            return f"{get_text(user_id, 'ai_clarify_missing').format(fields=error_msg)}\\n\\n{ai_result.get('message', '')}", None
     
     # Проверяем, все ли обязательные поля есть
     required_fields = ["service_key", "duration", "date_iso", "time_str", "client_name", "client_phone"]

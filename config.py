@@ -19,6 +19,21 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 FEATURE_CHATGPT = os.getenv("FEATURE_CHATGPT", "0") == "1"
 FEATURE_AI_BOOKING = os.getenv("FEATURE_AI_BOOKING", "0") == "1"
 
+
+# Webhook настройки
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
+
+# Google Sheets настройки для проверки занятости
+SHEETS_ENABLED = os.getenv("SHEETS_ENABLED", "0") == "1"
+SHEETS_SPREADSHEET_ID = os.getenv("SHEETS_SPREADSHEET_ID", "")
+SHEETS_SHEET_NAME = os.getenv("SHEETS_SHEET_NAME", "bookings")
+GOOGLE_CREDENTIALS_FILE = os.getenv("GOOGLE_CREDENTIALS_FILE", "google_credentials.json")
+
+# Напоминания настройки
+REMINDERS_ENABLED = os.getenv("REMINDERS_ENABLED", "0") == "1"
+REMINDER_LEAD_MIN = int(os.getenv("REMINDER_LEAD_MIN", "120"))
+REMINDER_POLL_INTERVAL_SEC = int(os.getenv("REMINDER_POLL_INTERVAL_SEC", "60"))
+
 # Конфигурация календаря и рабочего времени
 TZINFO = zoneinfo.ZoneInfo(TZ)
 WORKING_HOURS = {
@@ -88,6 +103,12 @@ TEXTS = {
         "ai_time_unavailable": "Выбранное время недоступно. Доступно: {slots}",
         "ai_ready_to_confirm": "Проверьте: {service}, {duration} мин, {date} {time}. Подтвердить?",
         "ai_booking_success": "✅ Запись оформлена через ИИ-помощника!",
+        "ai_clarify_massage_type": "На какой массаж вы хотите — традиционный тайский или что-то поинтереснее? Также укажите длительность, ваше имя и номер телефона.",
+        "section_unavailable": "Раздел временно недоступен.",
+        "enter_name_prompt": "👤 Введите ваше имя:",
+        "slots_unavailable_try_again": "❌ Выбранное время недоступно.\n\nПопробуйте другое время или выберите другую дату.",
+        "sheets_integration_error": "⚠️ Временная проблема с проверкой доступности. Попробуйте позже или выберите другое время.",
+        "reminder_2h": "⏰ Напоминание: ваша запись через 2 часа.\n\n🔸 Услуга: *{service}*\n🔸 Дата: *{date}*\n🔸 Время: *{time}*\n🔸 Длительность: *{duration} мин*\n\nЕсли нужно перенести — ответьте на это сообщение.",
         "categories": {
             "massage": "Массаж",
             "spa": "Spa",
@@ -141,6 +162,12 @@ TEXTS = {
         "ai_time_unavailable": "Chosen time is unavailable. Available: {slots}",
         "ai_ready_to_confirm": "Please confirm: {service}, {duration} min, {date} {time}. Confirm?",
         "ai_booking_success": "✅ Booking completed via AI Assistant!",
+        "ai_clarify_massage_type": "Please clarify massage type: Traditional Thai or something more specific?",
+        "section_unavailable": "Section temporarily unavailable.",
+        "enter_name_prompt": "👤 Enter your name:",
+        "slots_unavailable_try_again": "❌ Selected time is unavailable.\n\nTry another time or select a different date.",
+        "sheets_integration_error": "⚠️ Temporary issue checking availability. Please try later or select different time.",
+        "reminder_2h": "⏰ Reminder: your appointment is in 2 hours.\n\n🔸 Service: *{service}*\n🔸 Date: *{date}*\n🔸 Time: *{time}*\n🔸 Duration: *{duration} min*\n\nReply here if you need to reschedule.",
         "categories": {
             "massage": "Massage",
             "spa": "Spa", 

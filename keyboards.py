@@ -57,17 +57,17 @@ def create_main_menu(user_id: int) -> ReplyKeyboardMarkup:
     
     buttons = [row1, row2]
     
-    # Добавляем кнопки AI, AI booking и смены языка
+    # Добавляем кнопки AI booking, главное меню и смены языка
     bottom_buttons = []
-    
-    # AI чат всегда доступен
-    ai_button = KeyboardButton(text=get_text(user_id, "ask_ai"))
-    bottom_buttons.append(ai_button)
     
     # AI booking только если включен
     if FEATURE_AI_BOOKING:
         ai_booking_button = KeyboardButton(text=get_text(user_id, "ai_booking"))
         bottom_buttons.append(ai_booking_button)
+    
+    # Главное меню
+    main_menu_button = KeyboardButton(text=get_text(user_id, "main_menu"))
+    bottom_buttons.append(main_menu_button)
     
     # Смена языка
     lang_button = KeyboardButton(text=get_text(user_id, "change_language"))
@@ -180,6 +180,20 @@ def create_duration_keyboard(user_id: int, service_key: str) -> InlineKeyboardMa
     add_persistent_menu_buttons(builder, user_id)
     
     return builder.as_markup()
+
+def create_back_keyboard(user_id: int) -> ReplyKeyboardMarkup:
+    """Создает клавиатуру с кнопкой Назад для этапов ввода"""
+    buttons = [
+        [
+            KeyboardButton(text=get_text(user_id, "back")),
+            KeyboardButton(text=get_text(user_id, "main_menu"))
+        ]
+    ]
+    return ReplyKeyboardMarkup(
+        keyboard=buttons,
+        resize_keyboard=True,
+        one_time_keyboard=False
+    )
 
 def create_confirm_keyboard(user_id: int) -> InlineKeyboardMarkup:
     """Создает клавиатуру подтверждения записи"""

@@ -93,8 +93,11 @@ def build_calendar(user_id: int, year: int, month: int, min_date: date, max_date
     
     return builder.as_markup()
 
-def generate_slots(date_obj: date, duration_min: int) -> List[str]:
+def generate_slots(date_obj: date, duration_min: int, step_min: int = None) -> List[str]:
     """Генерирует доступные временные слоты на дату"""
+    if step_min is None:
+        step_min = SLOT_STEP_MIN
+    
     weekday = date_obj.weekday()
     
     if weekday not in WORKING_HOURS:
@@ -117,13 +120,22 @@ def generate_slots(date_obj: date, duration_min: int) -> List[str]:
         min_start = now_local + timedelta(minutes=30)
         # Округляем до ближайшего шага вперед
         minutes_from_midnight = min_start.hour * 60 + min_start.minute
-        rounded_minutes = ((minutes_from_midnight // SLOT_STEP_MIN) + 1) * SLOT_STEP_MIN
+        rounded_minutes = ((minutes_from_midnight // step_min) + 1) * step_min
         min_start_rounded = datetime.combine(date_obj, datetime.min.time()) + timedelta(minutes=rounded_minutes)
         start_dt = max(start_dt, min_start_rounded)
     
-    # Получаем существующие резервации на эту дату
+    # Получаем существующие резервации на эту дату (локальные)
     date_key = date_obj.strftime("%Y-%m-%d")
     existing_reservations = RESERVATIONS.get(date_key, [])
+    
+    # Добавляем резервации из Google Sheets
+    try:
+        from google_sheets import get_sheets_reservations_for_date
+        sheets_reservations = get_sheets_reservations_for_date(date_obj)
+        existing_reservations.extend(sheets_reservations)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Ошибка загрузки резерваций из Google Sheets: {e}")
     
     slots = []
     current_dt = start_dt
@@ -142,15 +154,15 @@ def generate_slots(date_obj: date, duration_min: int) -> List[str]:
         if is_available:
             slots.append(current_dt.strftime("%H:%M"))
         
-        current_dt += timedelta(minutes=SLOT_STEP_MIN)
+        current_dt += timedelta(minutes=step_min)
     
     return slots
 
-def slots_kb(user_id: int, date_obj: date, duration_min: int) -> InlineKeyboardMarkup:
+def slots_kb(user_id: int, date_obj: date, duration_min: int, step_min: int = None) -> InlineKeyboardMarkup:
     """Создает клавиатуру с доступными временными слотами"""
     builder = InlineKeyboardBuilder()
     
-    slots = generate_slots(date_obj, duration_min)
+    slots = generate_slots(date_obj, duration_min, step_min)
     
     if not slots:
         # Нет доступных слотов

@@ -188,8 +188,7 @@ SERVICE_CATALOG = [
         title_ru="Базовый маникюр",
         title_en="Basic Manicure",
         variants=[
-            ServiceVariant(45, 300),
-            ServiceVariant(60, 400)
+            ServiceVariant(90, 800)
         ]
     ),
     Service(
@@ -197,8 +196,7 @@ SERVICE_CATALOG = [
         title_ru="Гель-лак маникюр",
         title_en="Gel Polish Manicure",
         variants=[
-            ServiceVariant(60, 450),
-            ServiceVariant(90, 600)
+            ServiceVariant(90, 800)
         ]
     ),
     Service(
@@ -206,8 +204,7 @@ SERVICE_CATALOG = [
         title_ru="Базовый педикюр",
         title_en="Basic Pedicure",
         variants=[
-            ServiceVariant(60, 350),
-            ServiceVariant(75, 450)
+            ServiceVariant(90, 800)
         ]
     ),
     Service(
@@ -215,8 +212,7 @@ SERVICE_CATALOG = [
         title_ru="Гель-лак педикюр",
         title_en="Gel Polish Pedicure",
         variants=[
-            ServiceVariant(75, 500),
-            ServiceVariant(90, 650)
+            ServiceVariant(90, 800)
         ]
     ),
     Service(
@@ -224,9 +220,7 @@ SERVICE_CATALOG = [
         title_ru="Дизайн ногтей",
         title_en="Nail Art",
         variants=[
-            ServiceVariant(30, 200),
-            ServiceVariant(45, 300),
-            ServiceVariant(60, 400)
+            ServiceVariant(90, 800)
         ]
     )
 ]
