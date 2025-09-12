@@ -201,8 +201,35 @@ async def handle_text_menu(message: Message, state: FSMContext):
         elif current_state == AIState.asking.state:
             await process_ai_booking(message, state)
         else:
-            # Неизвестная команда, показываем меню
-            await message.answer(get_text(user_id, "section_unavailable"))
+            # Проверяем, не запрос ли это на бронирование
+            booking_keywords = [
+                "записать", "запись", "забронировать", "бронь", "хочу массаж", 
+                "можно записаться", "записаться на", "booking", "book", "appointment",
+                "massage appointment", "можешь записать", "запиши меня"
+            ]
+            
+            text_lower = text.lower()
+            is_booking_request = any(keyword in text_lower for keyword in booking_keywords)
+            
+            if is_booking_request:
+                # Это запрос на бронирование - активируем AI booking
+                await cmd_ai_book(message, state)
+                return
+            
+            # Обычная команда - попробуем ответить через ChatGPT
+            from config import FEATURE_CHATGPT, OPENAI_API_KEY
+            if FEATURE_CHATGPT and OPENAI_API_KEY:
+                # Отправляем вопрос в ChatGPT
+                thinking_msg = await message.answer("🤖 Думаю...")
+                try:
+                    response = await ask_chatgpt(text, user_id)
+                    await thinking_msg.edit_text(response)
+                except Exception as e:
+                    logger.error(f"Error in auto ChatGPT: {e}")
+                    await thinking_msg.edit_text("Используйте кнопки меню или команду 🤖 для вопросов к AI")
+            else:
+                # ChatGPT отключен, показываем стандартное сообщение
+                await message.answer("Используйте кнопки меню ниже 👇")
 
 async def handle_back_button(message: Message, state: FSMContext):
     """Обрабатывает нажатие кнопки 'Назад'"""
@@ -224,7 +251,7 @@ async def select_category_text(message: Message, state: FSMContext, category: st
     category_key = "wax" if category == "waxing" else category
     category_name = get_text(user_id, f"categories.{category_key}")
     await message.answer(
-        f"📋 *{category_name}*\n\n{get_text(user_id, 'select_service')}:",
+        f"📋 *{safe_text(category_name)}*\n\n{get_text(user_id, 'select_service')}:",
         reply_markup=create_services_keyboard(user_id, category)
     )
     await state.set_state(BookingState.selecting_service)
@@ -242,7 +269,7 @@ async def select_category_inline(callback: CallbackQuery, state: FSMContext):
     category_key = "wax" if category == "waxing" else category
     category_name = get_text(user_id, f"categories.{category_key}")
     await callback.message.edit_text(
-        f"📋 *{category_name}*\n\n{get_text(user_id, 'select_service')}:",
+        f"📋 *{safe_text(category_name)}*\n\n{get_text(user_id, 'select_service')}:",
         reply_markup=create_services_keyboard(user_id, category)
     )
     await state.set_state(BookingState.selecting_service)
@@ -294,7 +321,7 @@ async def select_service(callback_query: CallbackQuery, state: FSMContext):
     else:
         # Massage/Spa с несколькими вариантами - показываем выбор длительности
         await callback_query.message.edit_text(
-            f"*{title}*\n\n{get_text(user_id, 'select_duration')}",
+            f"*{safe_text(title)}*\n\n{get_text(user_id, 'select_duration')}",
             reply_markup=create_duration_keyboard(user_id, service_key)
         )
         await state.set_state(BookingState.selecting_duration)
@@ -602,7 +629,7 @@ async def back_to_services(callback: CallbackQuery, state: FSMContext):
     category_key = "wax" if category == "waxing" else category
     category_name = get_text(user_id, f"categories.{category_key}")
     await callback.message.edit_text(
-        f"📋 *{category_name}*\n\n{get_text(user_id, 'select_service')}:",
+        f"📋 *{safe_text(category_name)}*\n\n{get_text(user_id, 'select_service')}:",
         reply_markup=create_services_keyboard(user_id, category)
     )
     await state.set_state(BookingState.selecting_service)
@@ -663,20 +690,25 @@ async def process_ai_booking(message: Message, state: FSMContext):
     try:
         # Обрабатываем через AI
         response, booking_data = await ai_book(user_id, text, context)
+        logger.info(f"AI response: {repr(response)}")
         
-        # Редактируем сообщение с ответом
-        await thinking_msg.edit_text(response)
+        # Редактируем сообщение с ответом (с защитой от Markdown ошибок)
+        try:
+            await thinking_msg.edit_text(response)
+        except Exception as edit_error:
+            # Если ошибка парсинга Markdown, отправляем без разметки
+            logger.warning(f"Failed to edit with Markdown, trying plain text: {edit_error}")
+            try:
+                await thinking_msg.edit_text(response, parse_mode=None)
+            except Exception:
+                # Если и это не работает, отправляем новое сообщение
+                await message.answer(response, parse_mode=None)
         
         if booking_data:
-            # Готово к подтверждению - показываем кнопки
+            # Готово к подтверждению - показываем кнопки (сообщение уже отправлено в edit_text)
             from keyboards import create_confirm_keyboard
             await message.answer(
-                get_text(user_id, "ai_ready_to_confirm").format(
-                    service=booking_data.get("service_key", ""),
-                    duration=booking_data.get("duration", ""),
-                    date=booking_data.get("date_str", ""),
-                    time=booking_data.get("time_str", "")
-                ),
+                "👆 Подтверждаете запись?",
                 reply_markup=create_confirm_keyboard(user_id)
             )
             # Сохраняем данные бронирования в состояние

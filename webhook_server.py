@@ -18,6 +18,10 @@ from typing import Dict, Any, Optional
 from flask import Flask, request, jsonify
 import gspread
 from google.auth.exceptions import GoogleAuthError
+from dotenv import load_dotenv
+
+# Загрузка переменных окружения
+load_dotenv(override=True)
 
 # Настройка логирования
 logging.basicConfig(
@@ -27,10 +31,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Конфигурация
-SPREADSHEET_ID = "1eKZB-LdyKw0EqYdNcG6Bjo7tGP4nCCdvNkYtAhWhgx8"
-SHEET_NAME = "bookings"
-CREDENTIALS_FILE = "google_credentials.json"  # Укажите правильное имя вашего JSON файла
-PORT = 8080
+SPREADSHEET_ID = os.getenv("SHEETS_SPREADSHEET_ID", "")
+SHEET_NAME = os.getenv("SHEETS_SHEET_NAME", "bookings")
+CREDENTIALS_FILE = os.getenv("GOOGLE_CREDENTIALS_FILE", "google_credentials.json")
+PORT = int(os.getenv("WEBHOOK_PORT", "8080"))
 
 # Flask приложение
 app = Flask(__name__)

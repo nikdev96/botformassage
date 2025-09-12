@@ -126,16 +126,19 @@ def generate_slots(date_obj: date, duration_min: int, step_min: int = None) -> L
     
     # Получаем существующие резервации на эту дату (локальные)
     date_key = date_obj.strftime("%Y-%m-%d")
-    existing_reservations = RESERVATIONS.get(date_key, [])
+    local_reservations = list(RESERVATIONS.get(date_key, []))
     
-    # Добавляем резервации из Google Sheets
+    # Получаем резервации из Google Sheets
+    sheets_reservations = []
     try:
         from google_sheets import get_sheets_reservations_for_date
         sheets_reservations = get_sheets_reservations_for_date(date_obj)
-        existing_reservations.extend(sheets_reservations)
     except Exception as e:
         import logging
         logging.getLogger(__name__).warning(f"Ошибка загрузки резерваций из Google Sheets: {e}")
+    
+    # Объединяем все резервации для проверки занятости
+    all_reservations = local_reservations + sheets_reservations
     
     slots = []
     current_dt = start_dt
@@ -145,7 +148,7 @@ def generate_slots(date_obj: date, duration_min: int, step_min: int = None) -> L
         
         # Проверяем, не пересекается ли слот с существующими резервациями
         is_available = True
-        for res_start, res_end in existing_reservations:
+        for res_start, res_end in all_reservations:
             # Проверка пересечения интервалов
             if not (slot_end <= res_start or current_dt >= res_end):
                 is_available = False

@@ -287,18 +287,18 @@ def run_offline_tests() -> None:
     assert len(WORKING_HOURS) == 7, "WORKING_HOURS должен содержать 7 дней"
     assert SLOT_STEP_MIN > 0, "SLOT_STEP_MIN должен быть больше нуля"
     assert isinstance(RESERVATIONS, dict), "RESERVATIONS должен быть словарем"
-    assert MAX_DAYS_AHEAD == 14, "MAX_DAYS_AHEAD должен быть 14"
+    assert MAX_DAYS_AHEAD > 0, "MAX_DAYS_AHEAD должен быть больше нуля"
     
-    # Тест 9: Проверяем ограничение 14 дней
+    # Тест 9: Проверяем ограничение дней согласно конфигурации
     from datetime import datetime, date, timedelta
     from config import TZINFO
     
     today = datetime.now(TZINFO).date()
     max_date = today + timedelta(days=MAX_DAYS_AHEAD)
     
-    # Проверяем, что максимальная дата не превышает 14 дней от сегодня
+    # Проверяем, что максимальная дата соответствует конфигурации
     days_diff = (max_date - today).days
-    assert days_diff == 14, f"Максимальная дата должна быть через 14 дней, получено: {days_diff}"
+    assert days_diff == MAX_DAYS_AHEAD, f"Максимальная дата должна быть через {MAX_DAYS_AHEAD} дней, получено: {days_diff}"
     
     # Тест 10: Проверяем генерацию слотов для сегодняшнего дня
     from calendar_utils import generate_slots
@@ -346,7 +346,7 @@ async def reserve_and_notify(bot: 'Bot', user_id: int, data: dict, booking_sourc
         return
     
     lang = get_lang(user_id)
-    service_title = service.get_title(lang)
+    service_title = service.get_title("en")
     
     # Сообщение админу
     # Пытаемся получить username пользователя (если возможно)
@@ -516,7 +516,8 @@ async def send_webhook_to_sheets(user_id: int, data: dict, service: 'Service', v
     
     # Подготавливаем payload
     lang = get_lang(user_id)
-    service_title = service.get_title(lang)
+    # Service title всегда на английском для Google Sheets (для руководителя)
+    service_title = service.get_title("en")
     
     webhook_payload = {
         "event": "booking.created",

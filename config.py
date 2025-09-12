@@ -7,7 +7,7 @@ from collections import defaultdict
 from dotenv import load_dotenv
 
 # Загрузка переменных окружения
-load_dotenv()
+load_dotenv(override=True)
 
 # Основные настройки
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
@@ -35,7 +35,12 @@ REMINDER_LEAD_MIN = int(os.getenv("REMINDER_LEAD_MIN", "120"))
 REMINDER_POLL_INTERVAL_SEC = int(os.getenv("REMINDER_POLL_INTERVAL_SEC", "60"))
 
 # Конфигурация календаря и рабочего времени
-TZINFO = zoneinfo.ZoneInfo(TZ)
+try:
+    TZINFO = zoneinfo.ZoneInfo(TZ)
+except Exception:
+    import logging
+    logging.getLogger(__name__).warning(f"Invalid timezone '{TZ}', falling back to Asia/Bangkok")
+    TZINFO = zoneinfo.ZoneInfo("Asia/Bangkok")
 WORKING_HOURS = {
     0: ("10:00", "22:00"),  # Понедельник
     1: ("10:00", "22:00"),  # Вторник
@@ -46,7 +51,6 @@ WORKING_HOURS = {
     6: ("10:00", "20:00"),  # Воскресенье
 }
 SLOT_STEP_MIN = 30
-MAX_MONTHS_AHEAD = 3
 MAX_DAYS_AHEAD = 14
 
 # In-memory резервации: {"YYYY-MM-DD": [(start_dt, end_dt), ...]}

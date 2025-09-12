@@ -303,13 +303,13 @@ async def ai_book(user_id: int, text: str, context: Dict = None) -> Tuple[str, O
             massage_clarify = get_text(user_id, 'ai_clarify_massage_type')
             
             if clarify_msg:
-                return f"{clarify_msg}\\n\\n{massage_clarify}", None
+                return f"{clarify_msg}\n\n{massage_clarify}", None
             else:
                 return massage_clarify, None
         else:
             # Стандартная обработка для EN или других ошибок
-            error_msg = "\\n".join(errors)
-            return f"{get_text(user_id, 'ai_clarify_missing').format(fields=error_msg)}\\n\\n{ai_result.get('message', '')}", None
+            error_msg = "\n".join(errors)
+            return f"{get_text(user_id, 'ai_clarify_missing').format(fields=error_msg)}\n\n{ai_result.get('message', '')}", None
     
     # Проверяем, все ли обязательные поля есть
     required_fields = ["service_key", "duration", "date_iso", "time_str", "client_name", "client_phone"]
@@ -336,7 +336,7 @@ async def ai_book(user_id: int, text: str, context: Dict = None) -> Tuple[str, O
         missing_text = ", ".join(translated_missing)
         
         clarify_msg = get_text(user_id, 'ai_clarify_missing').format(fields=missing_text)
-        return f"{clarify_msg}\\n\\n{ai_result.get('message', '')}", None
+        return f"{clarify_msg}\n\n{ai_result.get('message', '')}", None
     
     # Все данные есть - готовы к подтверждению
     service = get_service_by_key(normalized["service_key"])
