@@ -180,9 +180,6 @@ async def schedule_in_memory_reminder(bot: Bot, user_id: int, booking_data: dict
 
 async def main():
     """Главная функция запуска бота"""
-    if os.getenv("RUN_TESTS") == "1":
-        run_offline_tests()
-        return
     
     if not BOT_TOKEN:
         raise SystemExit("❌ BOT_TOKEN не найден в .env файле")
@@ -221,10 +218,16 @@ async def main():
         await bot.session.close()
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("👋 Бот остановлен пользователем")
-    except Exception as e:
-        logger.error(f"Критическая ошибка: {e}")
-        raise
+    # Проверяем режим тестов ДО запуска asyncio
+    if os.getenv("RUN_TESTS") == "1":
+        print("🧪 Запуск офлайн-тестов...")
+        run_offline_tests()
+        print("✅ Тесты завершены успешно")
+    else:
+        try:
+            asyncio.run(main())
+        except KeyboardInterrupt:
+            logger.info("👋 Бот остановлен пользователем")
+        except Exception as e:
+            logger.error(f"Критическая ошибка: {e}")
+            raise

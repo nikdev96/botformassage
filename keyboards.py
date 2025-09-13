@@ -1,6 +1,7 @@
 """
 Клавиатуры для Nova Chaloklum Health Massage Telegram Bot
 """
+from functools import lru_cache
 from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -12,10 +13,12 @@ from typing import List
 
 from config import user_languages, FEATURE_AI_BOOKING
 from models import SERVICE_CATEGORIES, SERVICE_CATALOG
-from utils import get_text, get_service_by_key
+from text_formatter import get_text
+from utils import get_service_by_key
 
+@lru_cache(maxsize=1)
 def create_language_keyboard() -> InlineKeyboardMarkup:
-    """Создает клавиатуру выбора языка"""
+    """Создает клавиатуру выбора языка (кэшированная)"""
     keyboard = [
         [InlineKeyboardButton(text="🇷🇺 Русский", callback_data="lang:ru")],
         [InlineKeyboardButton(text="🇬🇧 English", callback_data="lang:en")]
@@ -29,9 +32,14 @@ def add_persistent_menu_buttons(builder: InlineKeyboardBuilder, user_id: int) ->
         InlineKeyboardButton(text=get_text(user_id, "change_language"), callback_data="change_lang")
     )
 
-def create_main_menu(user_id: int) -> ReplyKeyboardMarkup:
-    """Создает основное меню с категориями услуг"""
-    lang = user_languages.get(user_id, "en")
+@lru_cache(maxsize=4)  # Кэш для ru/en с/без AI
+def _create_base_main_menu(lang: str, has_ai: bool) -> ReplyKeyboardMarkup:
+    """Создает базовое меню (внутренняя кэшированная функция)"""
+    from utils import get_text
+    
+    # Создаем временный пользователь для доступа к get_text
+    temp_user_id = 999999
+    user_languages[temp_user_id] = lang
     
     buttons = []
     categories = [
@@ -45,9 +53,8 @@ def create_main_menu(user_id: int) -> ReplyKeyboardMarkup:
     row2 = []
     
     for i, (category, emoji) in enumerate(categories):
-        # Маппинг для корректной локализации
         category_key = "cat_wax" if category == "waxing" else f"cat_{category}"
-        text = f"{emoji} {get_text(user_id, category_key)}"
+        text = f"{emoji} {get_text(temp_user_id, category_key)}"
         button = KeyboardButton(text=text)
         
         if i < 2:
@@ -60,32 +67,36 @@ def create_main_menu(user_id: int) -> ReplyKeyboardMarkup:
     # Добавляем кнопки AI booking, главное меню и смены языка
     bottom_buttons = []
     
-    # AI booking только если включен
-    if FEATURE_AI_BOOKING:
-        ai_booking_button = KeyboardButton(text=get_text(user_id, "ai_booking"))
+    if has_ai:
+        ai_booking_button = KeyboardButton(text=get_text(temp_user_id, "ai_booking"))
         bottom_buttons.append(ai_booking_button)
     
-    # Главное меню
-    main_menu_button = KeyboardButton(text=get_text(user_id, "main_menu"))
+    main_menu_button = KeyboardButton(text=get_text(temp_user_id, "main_menu"))
     bottom_buttons.append(main_menu_button)
     
-    # Смена языка
-    lang_button = KeyboardButton(text=get_text(user_id, "change_language"))
+    lang_button = KeyboardButton(text=get_text(temp_user_id, "change_language"))
     bottom_buttons.append(lang_button)
     
-    # Разбиваем кнопки по рядам (максимум 3 в ряду)
+    # Разбиваем кнопки по рядам
     if len(bottom_buttons) <= 2:
         buttons.append(bottom_buttons)
     else:
-        # Первый ряд: AI кнопки, второй ряд: язык
         buttons.append(bottom_buttons[:-1])
         buttons.append([bottom_buttons[-1]])
+    
+    # Очищаем временного пользователя
+    del user_languages[temp_user_id]
     
     return ReplyKeyboardMarkup(
         keyboard=buttons,
         resize_keyboard=True,
         one_time_keyboard=False
     )
+
+def create_main_menu(user_id: int) -> ReplyKeyboardMarkup:
+    """Создает основное меню с категориями услуг (оптимизированное)"""
+    lang = user_languages.get(user_id, "en")
+    return _create_base_main_menu(lang, FEATURE_AI_BOOKING)
 
 def cat_label(slug: str, user_id: int) -> str:
     """Возвращает локализованное название категории"""
@@ -195,18 +206,31 @@ def create_back_keyboard(user_id: int) -> ReplyKeyboardMarkup:
         one_time_keyboard=False
     )
 
-def create_confirm_keyboard(user_id: int) -> InlineKeyboardMarkup:
-    """Создает клавиатуру подтверждения записи"""
+@lru_cache(maxsize=2)  # Кэш для ru/en
+def _create_base_confirm_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """Создает базовую клавиатуру подтверждения (кэшированная)"""
+    from utils import get_text
+    
+    temp_user_id = 999999
+    user_languages[temp_user_id] = lang
+    
     keyboard = [
         [
             InlineKeyboardButton(
-                text=get_text(user_id, "confirm"), 
+                text=get_text(temp_user_id, "confirm"), 
                 callback_data="confirm:yes"
             ),
             InlineKeyboardButton(
-                text=get_text(user_id, "cancel"), 
+                text=get_text(temp_user_id, "cancel"), 
                 callback_data="confirm:no"
             )
         ]
     ]
+    
+    del user_languages[temp_user_id]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+def create_confirm_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    """Создает клавиатуру подтверждения записи (оптимизированная)"""
+    lang = user_languages.get(user_id, "en")
+    return _create_base_confirm_keyboard(lang)

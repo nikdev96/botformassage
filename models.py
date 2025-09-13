@@ -36,194 +36,50 @@ class BookingState(StatesGroup):
     entering_phone = State()
     confirming = State()
 
-# Каталог услуг
-SERVICE_CATALOG = [
+# Компактные данные услуг (data-driven)
+SERVICES_DATA = {
     # Массаж
-    Service(
-        key="thai_traditional",
-        title_ru="Традиционный тайский массаж",
-        title_en="Traditional Thai Massage",
-        variants=[
-            ServiceVariant(60, 400),
-            ServiceVariant(90, 600),
-            ServiceVariant(120, 800)
-        ]
-    ),
-    Service(
-        key="oil_massage",
-        title_ru="Масляный массаж",
-        title_en="Oil Massage",
-        variants=[
-            ServiceVariant(60, 450),
-            ServiceVariant(90, 650),
-            ServiceVariant(120, 850)
-        ]
-    ),
-    Service(
-        key="deep_tissue",
-        title_ru="Глубокий массаж тканей",
-        title_en="Deep Tissue Massage",
-        variants=[
-            ServiceVariant(60, 500),
-            ServiceVariant(90, 700),
-            ServiceVariant(120, 900)
-        ]
-    ),
-    Service(
-        key="hot_stone",
-        title_ru="Массаж горячими камнями",
-        title_en="Hot Stone Massage",
-        variants=[
-            ServiceVariant(90, 800),
-            ServiceVariant(120, 1000)
-        ]
-    ),
-    Service(
-        key="foot_massage",
-        title_ru="Массаж стоп",
-        title_en="Foot Massage",
-        variants=[
-            ServiceVariant(45, 300),
-            ServiceVariant(60, 400)
-        ]
-    ),
-    Service(
-        key="head_shoulders",
-        title_ru="Массаж головы и плеч",
-        title_en="Head & Shoulders Massage", 
-        variants=[
-            ServiceVariant(30, 250),
-            ServiceVariant(45, 350)
-        ]
-    ),
+    "thai_traditional": ("Традиционный тайский массаж", "Traditional Thai Massage", [(60,400), (90,600), (120,800)]),
+    "oil_massage": ("Масляный массаж", "Oil Massage", [(60,450), (90,650), (120,850)]),
+    "deep_tissue": ("Глубокий массаж тканей", "Deep Tissue Massage", [(60,500), (90,700), (120,900)]),
+    "hot_stone": ("Массаж горячими камнями", "Hot Stone Massage", [(90,800), (120,1000)]),
+    "foot_massage": ("Массаж стоп", "Foot Massage", [(45,300), (60,400)]),
+    "head_shoulders": ("Массаж головы и плеч", "Head & Shoulders Massage", [(30,250), (45,350)]),
     
     # Spa услуги
-    Service(
-        key="aromatherapy",
-        title_ru="Ароматерапия",
-        title_en="Aromatherapy",
-        variants=[
-            ServiceVariant(60, 550),
-            ServiceVariant(90, 750)
-        ]
-    ),
-    Service(
-        key="body_scrub",
-        title_ru="Скраб для тела",
-        title_en="Body Scrub",
-        variants=[
-            ServiceVariant(45, 400),
-            ServiceVariant(60, 500)
-        ]
-    ),
-    Service(
-        key="body_wrap",
-        title_ru="Обертывание тела",
-        title_en="Body Wrap",
-        variants=[
-            ServiceVariant(60, 600),
-            ServiceVariant(90, 800)
-        ]
-    ),
-    Service(
-        key="facial_basic",
-        title_ru="Базовый уход за лицом",
-        title_en="Basic Facial",
-        variants=[
-            ServiceVariant(60, 450),
-            ServiceVariant(90, 650)
-        ]
-    ),
-    Service(
-        key="facial_premium",
-        title_ru="Премиум уход за лицом",
-        title_en="Premium Facial",
-        variants=[
-            ServiceVariant(90, 800),
-            ServiceVariant(120, 1000)
-        ]
-    ),
+    "aromatherapy": ("Ароматерапия", "Aromatherapy", [(60,550), (90,750)]),
+    "body_scrub": ("Скраб для тела", "Body Scrub", [(45,400), (60,500)]),
+    "body_wrap": ("Обертывание тела", "Body Wrap", [(60,600), (90,800)]),
+    "facial_basic": ("Базовый уход за лицом", "Basic Facial", [(60,450), (90,650)]),
+    "facial_premium": ("Премиум уход за лицом", "Premium Facial", [(90,800), (120,1000)]),
     
     # Воск (эпиляция)
-    Service(
-        key="wax_legs",
-        title_ru="Эпиляция ног воском",
-        title_en="Leg Waxing",
-        variants=[
-            ServiceVariant(45, 350),
-            ServiceVariant(60, 450)
-        ]
-    ),
-    Service(
-        key="wax_arms",
-        title_ru="Эпиляция рук воском", 
-        title_en="Arm Waxing",
-        variants=[
-            ServiceVariant(30, 250),
-            ServiceVariant(45, 350)
-        ]
-    ),
-    Service(
-        key="wax_bikini",
-        title_ru="Эпиляция бикини воском",
-        title_en="Bikini Waxing", 
-        variants=[
-            ServiceVariant(30, 300),
-            ServiceVariant(45, 400)
-        ]
-    ),
-    Service(
-        key="wax_eyebrows",
-        title_ru="Коррекция бровей воском",
-        title_en="Eyebrow Waxing",
-        variants=[
-            ServiceVariant(15, 150),
-            ServiceVariant(20, 200)
-        ]
-    ),
+    "wax_legs": ("Эпиляция ног воском", "Leg Waxing", [(45,350), (60,450)]),
+    "wax_arms": ("Эпиляция рук воском", "Arm Waxing", [(30,250), (45,350)]),
+    "wax_bikini": ("Эпиляция бикини воском", "Bikini Waxing", [(30,300), (45,400)]),
+    "wax_eyebrows": ("Коррекция бровей воском", "Eyebrow Waxing", [(15,150), (20,200)]),
     
     # Ногтевой сервис
+    "manicure_basic": ("Базовый маникюр", "Basic Manicure", [(90,800)]),
+    "manicure_gel": ("Гель-лак маникюр", "Gel Polish Manicure", [(90,800)]),
+    "pedicure_basic": ("Базовый педикюр", "Basic Pedicure", [(90,800)]),
+    "pedicure_gel": ("Гель-лак педикюр", "Gel Polish Pedicure", [(90,800)]),
+    "nail_art": ("Дизайн ногтей", "Nail Art", [(90,800)])
+}
+
+# Генерация каталога услуг из компактных данных
+SERVICE_CATALOG = [
     Service(
-        key="manicure_basic",
-        title_ru="Базовый маникюр",
-        title_en="Basic Manicure",
-        variants=[
-            ServiceVariant(90, 800)
-        ]
-    ),
-    Service(
-        key="manicure_gel",
-        title_ru="Гель-лак маникюр",
-        title_en="Gel Polish Manicure",
-        variants=[
-            ServiceVariant(90, 800)
-        ]
-    ),
-    Service(
-        key="pedicure_basic",
-        title_ru="Базовый педикюр",
-        title_en="Basic Pedicure",
-        variants=[
-            ServiceVariant(90, 800)
-        ]
-    ),
-    Service(
-        key="pedicure_gel",
-        title_ru="Гель-лак педикюр",
-        title_en="Gel Polish Pedicure",
-        variants=[
-            ServiceVariant(90, 800)
-        ]
-    ),
-    Service(
-        key="nail_art",
-        title_ru="Дизайн ногтей",
-        title_en="Nail Art",
-        variants=[
-            ServiceVariant(90, 800)
-        ]
+        key=key,
+        title_ru=ru_title,
+        title_en=en_title,
+        variants=[ServiceVariant(duration, price) for duration, price in variants]
     )
+    for key, (ru_title, en_title, variants) in SERVICES_DATA.items()
 ]
+
+# Индекс для быстрого поиска услуг O(1)
+SERVICE_INDEX = {service.key: service for service in SERVICE_CATALOG}
 
 # Категории услуг
 SERVICE_CATEGORIES = {

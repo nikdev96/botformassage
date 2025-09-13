@@ -12,10 +12,9 @@ from config import (
     user_languages
 )
 from models import SERVICE_CATALOG, SERVICE_CATEGORIES
-from utils import (
-    validate_date_format, validate_time_format, is_valid_phone,
-    get_service_by_key, get_service_variant, get_text, safe_text
-)
+from text_formatter import get_text, safe_text
+from validators import validate_date_format, validate_time_format, is_valid_phone
+from utils import get_service_by_key, get_service_variant
 from calendar_utils import generate_slots
 
 logger = logging.getLogger(__name__)

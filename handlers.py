@@ -13,11 +13,12 @@ from aiogram.types import Message, CallbackQuery
 from config import ADMIN_CHAT_ID, TZ, TZINFO, MAX_DAYS_AHEAD, RESERVATIONS, user_languages, TEXTS, FEATURE_AI_BOOKING, OPENAI_API_KEY
 from models import BookingState, SERVICE_CATEGORIES
 from aiogram.fsm.state import State, StatesGroup
+from text_formatter import get_text, get_lang, safe_text
+from validators import validate_date_format, validate_time_format, is_valid_phone
 from utils import (
-    get_text, get_lang, validate_date_format, validate_time_format, 
-    is_valid_phone, safe_text, get_service_by_key, get_service_variant,
-    get_category_by_local_name, reserve_and_notify, show_calendar_for_booking,
-    show_time_slots, handle_fsm_back_navigation
+    get_service_by_key, get_service_variant, get_category_by_local_name, 
+    reserve_and_notify, show_calendar_for_booking, show_time_slots, 
+    handle_fsm_back_navigation
 )
 from keyboards import (
     create_language_keyboard, create_main_menu, categories_kb,
@@ -25,7 +26,7 @@ from keyboards import (
     create_back_keyboard
 )
 from calendar_utils import build_calendar, slots_kb
-from chatgpt import ask_chatgpt
+# Удален неиспользуемый импорт - будет импортироваться лениво
 
 # Состояния для AI чата
 class ChatState(StatesGroup):
@@ -36,6 +37,16 @@ class AIState(StatesGroup):
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
+
+# Вспомогательная функция для удаления сообщений с задержкой
+async def delete_message_delayed(message, delay_seconds: int = 2):
+    """Удаляет сообщение через указанное количество секунд"""
+    import asyncio
+    await asyncio.sleep(delay_seconds)
+    try:
+        await message.delete()
+    except Exception:
+        pass  # Игнорируем ошибки удаления
 
 # Создаем router для handlers
 router = Router()
@@ -124,14 +135,21 @@ async def select_language(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     user_languages[user_id] = lang
     
+    # Показываем системное уведомление
     await callback.message.edit_text(
         get_text(user_id, "language_changed")
     )
+    
     # Отправляем новое сообщение с reply-клавиатурой
     await callback.message.answer(
         get_text(user_id, "choose_category"),
         reply_markup=create_main_menu(user_id)
     )
+    
+    # Удаляем системное сообщение через 2 секунды
+    import asyncio
+    asyncio.create_task(delete_message_delayed(callback.message, 2))
+    
     await callback.answer()
 
 # === ТЕКСТОВЫЕ СООБЩЕНИЯ (КНОПКИ МЕНЮ) ===
@@ -150,6 +168,17 @@ async def handle_text_menu(message: Message, state: FSMContext):
         )
         return
     
+    # Перехватываем кнопку "Назад" и мгновенно удаляем из чата
+    back_text = get_text(user_id, "back")
+    if text == back_text or text == back_text.strip():
+        # Мгновенно удаляем сообщение с кнопкой
+        try:
+            await message.delete()
+        except Exception:
+            pass  # Игнорируем ошибки удаления
+        await handle_back_button(message, state)
+        return
+
     # Проверяем, является ли это командой смены языка
     if text == get_text(user_id, "change_language"):
         await cmd_lang(message, state)
@@ -222,8 +251,12 @@ async def handle_text_menu(message: Message, state: FSMContext):
                 # Отправляем вопрос в ChatGPT
                 thinking_msg = await message.answer("🤖 Думаю...")
                 try:
+                    # Ленивый импорт
+                    from chatgpt import ask_chatgpt
                     response = await ask_chatgpt(text, user_id)
                     await thinking_msg.edit_text(response)
+                except ImportError:
+                    await thinking_msg.edit_text(get_text(user_id, "ai_unavailable"))
                 except Exception as e:
                     logger.error(f"Error in auto ChatGPT: {e}")
                     await thinking_msg.edit_text("Используйте кнопки меню или команду 🤖 для вопросов к AI")
@@ -342,21 +375,7 @@ async def select_duration(callback: CallbackQuery, state: FSMContext):
 
 # === КАЛЕНДАРЬ ===
 
-@router.callback_query(F.data.startswith("cal_month:"))
-async def calendar_navigate_month(callback: CallbackQuery, state: FSMContext):
-    """Навигация по месяцам в календаре"""
-    parts = callback.data.split(":")
-    year = int(parts[1])
-    month = int(parts[2])
-    user_id = callback.from_user.id
-    
-    today = datetime.now(TZINFO).date()
-    max_date = today + timedelta(days=MAX_DAYS_AHEAD)
-    
-    await callback.message.edit_reply_markup(
-        reply_markup=build_calendar(user_id, year, month, today, max_date)
-    )
-    await callback.answer()
+# Навигация по месяцам удалена - не нужна для 2-недельного периода бронирования
 
 @router.callback_query(F.data.startswith("cal_date:"))
 async def select_calendar_date(callback: CallbackQuery, state: FSMContext):
@@ -404,13 +423,12 @@ async def select_time_slot(callback: CallbackQuery, state: FSMContext):
     await state.update_data(time_str=time_str)
     await state.set_state(BookingState.entering_name)
     
-    await callback.message.edit_text(
-        get_text(user_id, "step_name")
-    )
+    # Редактируем предыдущее сообщение и отправляем reply клавиатуру
+    await callback.message.edit_text(get_text(user_id, "step_name"))
     
-    # Отправляем отдельное сообщение с reply клавиатурой 
+    # Отправляем reply клавиатуру с кнопкой "Назад"
     await callback.message.answer(
-        get_text(user_id, "enter_name_prompt"),
+        "👇",
         reply_markup=create_back_keyboard(user_id)
     )
     await callback.answer()
@@ -485,6 +503,8 @@ async def process_name(message: Message, state: FSMContext):
     name = message.text.strip()
     user_id = message.from_user.id
     
+    # Кнопка "Назад" уже перехвачена в handle_text_menu
+    
     if len(name) < 2:
         await message.answer(get_text(user_id, "name_too_short"))
         return
@@ -492,6 +512,7 @@ async def process_name(message: Message, state: FSMContext):
     await state.update_data(client_name=name)
     await state.set_state(BookingState.entering_phone)
     
+    # Отправляем сообщение с reply клавиатурой "Назад"
     await message.answer(
         get_text(user_id, "step_phone"),
         reply_markup=create_back_keyboard(user_id)
@@ -502,6 +523,8 @@ async def process_phone(message: Message, state: FSMContext):
     """Обрабатывает ввод телефона и показывает подтверждение"""
     phone = message.text.strip()
     user_id = message.from_user.id
+    
+    # Кнопка "Назад" уже перехвачена в handle_text_menu
     
     if not is_valid_phone(phone):
         await message.answer(get_text(user_id, "invalid_phone"))
@@ -545,8 +568,13 @@ async def process_ai_question(message: Message, state: FSMContext):
     # Отправляем временное сообщение "Думаю..."
     thinking_msg = await message.answer(get_text(user_id, "ai_thinking"))
     
-    # Получаем ответ от ChatGPT
-    response = await ask_chatgpt(question, user_id)
+    # Ленивый импорт ChatGPT
+    try:
+        from chatgpt import ask_chatgpt
+        response = await ask_chatgpt(question, user_id)
+    except ImportError as e:
+        logger.error(f"ChatGPT module not available: {e}")
+        response = get_text(user_id, "ai_unavailable")
     
     # Редактируем сообщение с ответом
     await thinking_msg.edit_text(response)
@@ -602,8 +630,12 @@ async def process_confirmation(callback: CallbackQuery, state: FSMContext, bot: 
         reply_markup=create_main_menu(user_id)
     )
 
+    # Сообщение подтверждения записи оставляем - важная информация для клиента
+
     await state.clear()
     await callback.answer("✅")
+
+# Inline кнопки "Назад" удалены - используется reply клавиатура
 
 # === НАВИГАЦИЯ ===
 
@@ -766,6 +798,8 @@ async def ai_confirm_booking(callback: CallbackQuery, state: FSMContext, bot: Bo
             get_text(user_id, "choose_category"),
             reply_markup=create_main_menu(user_id)
         )
+        
+        # Сообщение подтверждения AI записи оставляем - важная информация для клиента
         
     except Exception as e:
         logger.error(f"Error confirming AI booking: {e}")

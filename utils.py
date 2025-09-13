@@ -1,101 +1,19 @@
 """
 Утилиты для Nova Chaloklum Health Massage Telegram Bot
 """
-import re
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
-from config import TEXTS, user_languages, TZ
-from models import SERVICE_CATALOG, SERVICE_CATEGORIES, Service, ServiceVariant
+from config import TZ, user_languages
+from models import SERVICE_CATALOG, SERVICE_CATEGORIES, SERVICE_INDEX, Service, ServiceVariant
+from validators import validate_date_format, validate_time_format, is_valid_phone  
+from text_formatter import get_text, get_lang, safe_text, format_reminder_message, escape_md
 
 logger = logging.getLogger(__name__)
 
-def escape_md(text: str) -> str:
-    """Экранирует спецсимволы Markdown для безопасной подстановки пользовательского ввода"""
-    special_chars = "_*[]()~>#+-=|{}.!"
-    for char in special_chars:
-        text = text.replace(char, f"\\{char}")
-    return text
-
-def safe_text(text: str) -> str:
-    """Безопасная обработка пользовательского текста для Markdown"""
-    if not text:
-        return ""
-    return escape_md(str(text).strip())
-
-def is_valid_phone(phone: str) -> bool:
-    """Улучшенная валидация телефонного номера с поддержкой различных форматов"""
-    if not phone:
-        return False
-    
-    # Поддержка: +, цифры, пробелы, скобки, тире
-    # Минимум 10 цифр, максимум 15
-    pattern = r'^\+?[\d\s\-\(\)]{10,20}$'
-    
-    if not re.match(pattern, phone):
-        return False
-    
-    # Проверяем, что есть достаточно цифр (минимум 10)
-    digits_only = re.sub(r'[^\d]', '', phone)
-    return 10 <= len(digits_only) <= 15
-
-def get_text(user_id: int, key: str, **kwargs) -> str:
-    """Получает локализованный текст по ключу"""
-    lang = get_lang(user_id)
-    
-    # Навигация по вложенным ключам (например, "categories.massage")
-    keys = key.split(".")
-    text = TEXTS[lang]
-    for k in keys:
-        if isinstance(text, dict) and k in text:
-            text = text[k]
-        else:
-            # Fallback на английский, если ключ не найден
-            text = TEXTS["en"]
-            for k in keys:
-                if isinstance(text, dict) and k in text:
-                    text = text[k]
-                else:
-                    return f"❌ Text not found: {key}"
-            break
-    
-    # Форматирование с параметрами
-    if isinstance(text, str) and kwargs:
-        try:
-            return text.format(**kwargs)
-        except KeyError as e:
-            return f"❌ Missing parameter {e} for key: {key}"
-    
-    return str(text)
-
-def get_lang(user_id: int) -> str:
-    """Получает язык пользователя (по умолчанию английский)"""
-    return user_languages.get(user_id, "en")
-
-def validate_date_format(date_str: str) -> bool:
-    """Валидирует формат даты ДД.ММ.ГГГГ"""
-    pattern = r'^\d{2}\.\d{2}\.\d{4}$'
-    return bool(re.match(pattern, date_str))
-
-def validate_time_format(time_str: str) -> bool:
-    """Валидирует формат времени ЧЧ:ММ"""
-    pattern = r'^\d{2}:\d{2}$'
-    if not re.match(pattern, time_str):
-        return False
-    
-    # Дополнительная валидация значений
-    try:
-        hours, minutes = map(int, time_str.split(':'))
-        return 0 <= hours <= 23 and 0 <= minutes <= 59
-    except ValueError:
-        return False
-
 def get_service_by_key(service_key: str) -> Optional[Service]:
-    """Находит услугу по ключу"""
-    for service in SERVICE_CATALOG:
-        if service.key == service_key:
-            return service
-    return None
+    """Находит услугу по ключу (оптимизированный O(1) поиск)"""
+    return SERVICE_INDEX.get(service_key)
 
 def get_service_variant(service_key: str, duration: int) -> Optional[ServiceVariant]:
     """Находит вариант услуги по ключу и длительности"""
@@ -206,12 +124,17 @@ async def handle_fsm_back_navigation(user_id: int, message: 'Message', state: 'F
             reply_markup=create_back_keyboard(user_id)
         )
     elif current_state == BookingState.entering_name.state:
-        # Возвращаемся к вводу времени
-        await state.set_state(BookingState.entering_time)
-        await message.answer(
-            get_text(user_id, "step_time"),
-            reply_markup=create_back_keyboard(user_id)
-        )
+        # Возвращаемся к выбору даты и времени - показываем календарь
+        try:
+            await show_calendar_for_booking(user_id, message, state)
+        except Exception as e:
+            logger.error(f"Error in show_calendar_for_booking: {e}")
+            # Фолбэк - показываем основное меню
+            await state.clear()
+            await message.answer(
+                get_text(user_id, "choose_category"),
+                reply_markup=create_main_menu(user_id)
+            )
     elif current_state == BookingState.entering_time.state:
         # Возвращаемся к выбору даты - показываем календарь
         await show_calendar_for_booking(user_id, message, state)
@@ -570,35 +493,3 @@ async def send_webhook_to_sheets(user_id: int, data: dict, service: 'Service', v
     except Exception as e:
         logger.error(f"❌ Неожиданная ошибка при отправке webhook: {e}")
 
-def format_reminder_message(lang: str, service_title: str, date_str: str, time_str: str, duration_min: int) -> str:
-    """
-    Форматирует сообщение напоминания
-    
-    Args:
-        lang: Язык пользователя ('ru' или 'en')
-        service_title: Название услуги
-        date_str: Дата в формате DD.MM.YYYY
-        time_str: Время в формате HH:MM
-        duration_min: Длительность в минутах
-        
-    Returns:
-        Отформатированное сообщение напоминания
-    """
-    from config import TEXTS
-    
-    # Получаем шаблон сообщения
-    template = TEXTS.get(lang, TEXTS['en']).get('reminder_2h', 'Reminder: your appointment is in 2 hours.')
-    
-    # Безопасно форматируем все переменные
-    try:
-        formatted_message = template.format(
-            service=safe_text(service_title),
-            date=safe_text(date_str),
-            time=safe_text(time_str),
-            duration=duration_min
-        )
-        return formatted_message
-    except Exception as e:
-        logger.error(f"Ошибка форматирования напоминания: {e}")
-        # Фолбэк сообщение
-        return f"⏰ Напоминание о записи через 2 часа: {service_title}, {date_str} в {time_str}"

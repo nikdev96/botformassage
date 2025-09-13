@@ -8,7 +8,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from config import TZINFO, WORKING_HOURS, SLOT_STEP_MIN, RESERVATIONS
-from utils import get_text
+from text_formatter import get_text
 from keyboards import add_persistent_menu_buttons
 
 def build_calendar(user_id: int, year: int, month: int, min_date: date, max_date: date) -> InlineKeyboardMarkup:
@@ -32,26 +32,7 @@ def build_calendar(user_id: int, year: int, month: int, min_date: date, max_date
     header = f"{month_names[month-1]} {year}"
     builder.row(InlineKeyboardButton(text=header, callback_data="ignore"))
     
-    # Кнопки навигации
-    prev_month_data = "ignore"
-    next_month_data = "ignore"
-    
-    # Предыдущий месяц
-    if year > min_date.year or (year == min_date.year and month > min_date.month):
-        prev_year = year if month > 1 else year - 1
-        prev_month = month - 1 if month > 1 else 12
-        prev_month_data = f"cal_month:{prev_year}:{prev_month}"
-    
-    # Следующий месяц
-    if year < max_date.year or (year == max_date.year and month < max_date.month):
-        next_year = year if month < 12 else year + 1
-        next_month = month + 1 if month < 12 else 1
-        next_month_data = f"cal_month:{next_year}:{next_month}"
-    
-    builder.row(
-        InlineKeyboardButton(text=get_text(user_id, "prev_month"), callback_data=prev_month_data),
-        InlineKeyboardButton(text=get_text(user_id, "next_month"), callback_data=next_month_data)
-    )
+    # Кнопки навигации убраны - запись только на 2 недели, не нужна навигация по месяцам
     
     # Дни недели
     weekdays_ru = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
